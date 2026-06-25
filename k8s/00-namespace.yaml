@@ -1,0 +1,8 @@
+# Namespace que agrupa todos los recursos de la aplicación en el clúster.
+# Tener un namespace propio facilita ver, escalar, monitorear y borrar la app.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: innovatech
+  labels:
+    app.kubernetes.io/part-of: app-despacho

@@ -1,0 +1,84 @@
+# ============================================================
+# FRONTEND (React + nginx, puerto 80)
+# - Deployment: corre la imagen desde ECR (nginx sirve el build y
+#   hace de reverse proxy hacia venta-service / despacho-service)
+# - Service type LoadBalancer: AWS crea un balanceador con URL pública (IE2)
+# - HPA: autoscaling por CPU al 50%
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: front
+  namespace: innovatech
+  labels:
+    app: front
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: front
+  template:
+    metadata:
+      labels:
+        app: front
+    spec:
+      containers:
+        - name: front
+          # El pipeline reemplaza el tag :latest por el SHA del commit en cada deploy.
+          image: 172591304240.dkr.ecr.us-east-1.amazonaws.com/front-despacho:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 20
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: front-service
+  namespace: innovatech
+  labels:
+    app: front
+spec:
+  type: LoadBalancer          # AWS provisiona un Load Balancer con DNS público
+  selector:
+    app: front
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: front-hpa
+  namespace: innovatech
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: front
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50

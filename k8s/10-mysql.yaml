@@ -1,0 +1,84 @@
+# ============================================================
+# MySQL dentro del clúster (efímero) — base de datos compartida
+# para los microservicios "venta" y "despacho".
+#
+# Nota: es EFÍMERO (emptyDir). Si el pod se reinicia, se pierden
+# los datos. Es suficiente para la demo. Para datos persistentes
+# se usaría un PersistentVolumeClaim (EBS).
+#
+# Las apps Spring Boot crean sus bases (venta_db, despacho_db)
+# solas gracias a "createDatabaseIfNotExist=true" en la URL JDBC.
+# ============================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: innovatech
+  labels:
+    app: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          ports:
+            - containerPort: 3306
+          env:
+            # La contraseña de root viene del Secret "db-credentials"
+            # (creado por separado con kubectl, NO va en el repo → IE5).
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: password
+            # Permite que root se conecte desde otros pods (no solo localhost).
+            - name: MYSQL_ROOT_HOST
+              value: "%"
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          # Sondas: el pod se marca "listo" solo cuando MySQL responde.
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h localhost -p$MYSQL_ROOT_PASSWORD"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -h localhost -p$MYSQL_ROOT_PASSWORD"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+      volumes:
+        - name: mysql-data
+          emptyDir: {}
+---
+# Service interno (ClusterIP) — las apps se conectan al host "mysql".
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: innovatech
+  labels:
+    app: mysql
+spec:
+  type: ClusterIP
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
